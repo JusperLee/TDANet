@@ -1,2 +1,3 @@
 # TDANet
-An efficient speech separation methods
+
+When the paper is accepted, the code will be released.
