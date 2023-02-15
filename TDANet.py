@@ -1,5 +1,3 @@
-from audioop import bias
-from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,24 +44,8 @@ class _LayerNorm(nn.Module):
         return (self.gamma * normed_x.transpose(1, -1) + self.beta).transpose(1, -1)
 
 
-class GlobLN(_LayerNorm):
-    """Global Layer Normalization (globLN)."""
-
-    def forward(self, x):
-        """ Applies forward pass.
-
-        Works for any input size > 2D.
-
-        Args:
-            x (:class:`torch.Tensor`): Shape `[batch, chan, *]`
-
-        Returns:
-            :class:`torch.Tensor`: gLN_x `[batch, chan, *]`
-        """
-        dims = list(range(1, len(x.shape)))
-        mean = x.mean(dim=dims, keepdim=True)
-        var = torch.pow(x - mean, 2).mean(dim=dims, keepdim=True)
-        return self.apply_gain_and_bias((x - mean) / (var + 1e-8).sqrt())
+def GlobLN(nOut):
+    return nn.GroupNorm(1, nOut, eps=1e-8)
 
 
 class ConvNormAct(nn.Module):
@@ -375,6 +357,7 @@ class UConvBlock(nn.Module):
                 expanded = self.last_layer[i](x_fused[i], x_fused[i - 1])
             else:
                 expanded = self.last_layer[i](x_fused[i], expanded)
+
         return self.res_conv(expanded) + residual
 
 
@@ -383,7 +366,6 @@ class Recurrent(nn.Module):
         super().__init__()
         self.unet = UConvBlock(out_channels, in_channels, upsampling_depth)
         self.iter = _iter
-        # self.attention = Attention_block(out_channels)
         self.concat_block = nn.Sequential(
             nn.Conv1d(out_channels, out_channels, 1, 1, groups=out_channels), nn.PReLU()
         )
@@ -394,7 +376,6 @@ class Recurrent(nn.Module):
             if i == 0:
                 x = self.unet(x)
             else:
-                # m = self.attention(mixture, x)
                 x = self.unet(self.concat_block(mixture + x))
         return x
 
