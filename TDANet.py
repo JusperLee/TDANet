@@ -354,7 +354,7 @@ class UConvBlock(nn.Module):
         expanded = None
         for i in range(self.depth - 2, -1, -1):
             if i == self.depth - 2:
-                expanded = self.last_layer[i](x_fused[i], x_fused[i - 1])
+                expanded = self.last_layer[i](x_fused[i], x_fused[i + 1])
             else:
                 expanded = self.last_layer[i](x_fused[i], expanded)
 
