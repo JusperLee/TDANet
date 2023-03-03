@@ -196,51 +196,10 @@ class FFN(nn.Module):
         x = self.drop(x)
         return x
 
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, in_channels, max_length):
-        pe = torch.zeros(max_length, in_channels)
-        position = torch.arange(0, max_length).unsqueeze(1)
-        div_term = torch.exp(
-            (
-                torch.arange(0, in_channels, 2, dtype=torch.float)
-                * -(math.log(10000.0) / in_channels)
-            )
-        )
-        pe[:, 0::2] = torch.sin(position.float() * div_term)
-        pe[:, 1::2] = torch.cos(position.float() * div_term)
-        pe = pe.unsqueeze(0)
-        super().__init__()
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-        x = x + self.pe[:, : x.size(1)]
-        return x
-
-
-class MultiHeadAttention(nn.Module):
-    def __init__(self, in_channels, n_head, dropout, is_casual):
-        super().__init__()
-        self.pos_enc = PositionalEncoding(in_channels, 10000)
-        self.attn_in_norm = nn.LayerNorm(in_channels)
-        self.attn = nn.MultiheadAttention(in_channels, n_head, dropout)
-        self.dropout = nn.Dropout(dropout)
-        self.norm = nn.LayerNorm(in_channels)
-        self.is_casual = is_casual
-
-    def forward(self, x):
-        x = x.transpose(1, 2)
-        attns = None
-        output = self.pos_enc(self.attn_in_norm(x))
-        output, _ = self.attn(output, output, output)
-        output = self.norm(output + self.dropout(output))
-        return output.transpose(1, 2)
-
-
 class GA(nn.Module):
     def __init__(self, in_chan, out_chan, drop_path) -> None:
         super().__init__()
-        self.attn = MultiHeadAttention(out_chan, 8, 0.1, False)
+        self.attn = ConvNorm(out_chan, out_chan, 3, bias=False)
         self.mlp = FFN(out_chan, out_chan * 2, drop=0.1)
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
@@ -312,7 +271,11 @@ class UConvBlock(nn.Module):
                     d=1,
                 )
             )
-
+        
+        self.loc_glo_fus = nn.ModuleList([])
+        for i in range(upsampling_depth):
+            self.loc_glo_fus.append(LA(in_channels, in_channels))
+        
         self.res_conv = nn.Conv1d(in_channels, out_channels, 1)
 
         self.globalatt = GA(
@@ -348,8 +311,8 @@ class UConvBlock(nn.Module):
         x_fused = []
         # Gather them now in reverse order
         for idx in range(self.depth):
-            tmp = F.interpolate(global_f, size=output[idx].shape[-1], mode="nearest") + output[idx]
-            x_fused.append(tmp)
+            local = output[idx]
+            x_fused.append(self.loc_glo_fus[idx](local, global_f))
 
         expanded = None
         for i in range(self.depth - 2, -1, -1):
