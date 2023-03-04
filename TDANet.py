@@ -348,7 +348,7 @@ class UConvBlock(nn.Module):
         x_fused = []
         # Gather them now in reverse order
         for idx in range(self.depth):
-            tmp = F.interpolate(global_f, size=output[idx].shape[-1], mode="nearest") + output[idx]
+            tmp = torch.sigmoid(F.interpolate(global_f, size=output[idx].shape[-1], mode="nearest")) * output[idx]
             x_fused.append(tmp)
 
         expanded = None
