@@ -223,7 +223,7 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.pos_enc = PositionalEncoding(in_channels, 10000)
         self.attn_in_norm = nn.LayerNorm(in_channels)
-        self.attn = nn.MultiheadAttention(in_channels, n_head, dropout)
+        self.attn = nn.MultiheadAttention(in_channels, n_head, dropout, batch_first=True)
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(in_channels)
         self.is_casual = is_casual
