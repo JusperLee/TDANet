@@ -1,0 +1,70 @@
+# Network config
+audionet:
+  audionet_name: TDANet
+  audionet_config:
+    out_channels: 128
+    in_channels: 512
+    num_blocks: 16
+    upsampling_depth: 5
+    enc_kernel_size: 4 # ms
+    num_sources: 2
+
+# Loss config
+loss:
+  train:
+    loss_func: PITLossWrapper
+    sdr_type: pairwise_neg_snr
+    config:
+      pit_from: pw_mtx
+      threshold_byloss: true
+  val:
+    loss_func: PITLossWrapper
+    sdr_type: pairwise_neg_sisdr
+    config:
+      pit_from: pw_mtx
+      threshold_byloss: false
+
+# Training config
+training:
+  system: AudioLightningModule
+  gpus: [0,1,2,3]
+  parallel: ddp
+  epochs: 500
+  early_stop:
+    monitor: val_loss/dataloader_idx_0
+    mode: min
+    patience: 30
+    verbose: true
+  SpeedAug: False
+  
+# Optim config
+optimizer:
+  optim_name: adam
+  lr: 0.001
+  weight_decay: 0
+
+# Sche config
+scheduler: 
+  sche_name: ReduceLROnPlateau
+  sche_config:
+    patience: 15
+    factor: 0.5
+
+# Data config
+datamodule:
+  data_name: Libri2MixDataModule
+  data_config:
+    train_dir: DataPreProcess/Libri2Mix/train-100
+    valid_dir: DataPreProcess/Libri2Mix/dev
+    test_dir: DataPreProcess/Libri2Mix/test
+    n_src: 2
+    sample_rate: 8000
+    segment: 3.0
+    normalize_audio: false
+    batch_size: 1
+    num_workers: 8
+    pin_memory: true
+    persistent_workers: false
+
+exp:
+  exp_name: TDANet

@@ -1,17 +1,8 @@
-###
-# Author: Kai Li
-# Date: 2022-05-03 18:11:15
-# Email: lk21@mails.tsinghua.edu.cn
-# LastEditTime: 2022-08-29 16:44:07
-###
-from audioop import bias
-from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
 from .base_model import BaseModel
-
 
 def drop_path(x, drop_prob: float = 0.0, training: bool = False):
     if drop_prob == 0.0 or not training:
@@ -20,9 +11,9 @@ def drop_path(x, drop_prob: float = 0.0, training: bool = False):
 
     shape = (x.shape[0],) + (1,) * (
         x.ndim - 1
-    )  # work with diff dim tensors, not just 2D ConvNets
+    )
     random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
-    random_tensor.floor_()  # binarize
+    random_tensor.floor_()
     output = x.div(keep_prob) * random_tensor
     return output
 
@@ -53,24 +44,8 @@ class _LayerNorm(nn.Module):
         return (self.gamma * normed_x.transpose(1, -1) + self.beta).transpose(1, -1)
 
 
-class GlobLN(_LayerNorm):
-    """Global Layer Normalization (globLN)."""
-
-    def forward(self, x):
-        """ Applies forward pass.
-
-        Works for any input size > 2D.
-
-        Args:
-            x (:class:`torch.Tensor`): Shape `[batch, chan, *]`
-
-        Returns:
-            :class:`torch.Tensor`: gLN_x `[batch, chan, *]`
-        """
-        dims = list(range(1, len(x.shape)))
-        mean = x.mean(dim=dims, keepdim=True)
-        var = torch.pow(x - mean, 2).mean(dim=dims, keepdim=True)
-        return self.apply_gain_and_bias((x - mean) / (var + 1e-8).sqrt())
+def GlobLN(nOut):
+    return nn.GroupNorm(1, nOut, eps=1e-8)
 
 
 class ConvNormAct(nn.Module):
@@ -194,7 +169,6 @@ class DilatedConvNorm(nn.Module):
             padding=((kSize - 1) // 2) * d,
             groups=groups,
         )
-        # self.norm = nn.GroupNorm(1, nOut, eps=1e-08)
         self.norm = GlobLN(nOut)
 
     def forward(self, input):
@@ -202,7 +176,7 @@ class DilatedConvNorm(nn.Module):
         return self.norm(output)
 
 
-class Mlp(nn.Module):
+class FFN(nn.Module):
     def __init__(self, in_features, hidden_size, drop=0.1):
         super().__init__()
         self.fc1 = ConvNorm(in_features, hidden_size, 1, bias=False)
@@ -249,7 +223,7 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.pos_enc = PositionalEncoding(in_channels, 10000)
         self.attn_in_norm = nn.LayerNorm(in_channels)
-        self.attn = nn.MultiheadAttention(in_channels, n_head, dropout)
+        self.attn = nn.MultiheadAttention(in_channels, n_head, dropout, batch_first=True)
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(in_channels)
         self.is_casual = is_casual
@@ -263,11 +237,11 @@ class MultiHeadAttention(nn.Module):
         return output.transpose(1, 2)
 
 
-class GlobalAttention(nn.Module):
+class GA(nn.Module):
     def __init__(self, in_chan, out_chan, drop_path) -> None:
         super().__init__()
         self.attn = MultiHeadAttention(out_chan, 8, 0.1, False)
-        self.mlp = Mlp(out_chan, out_chan * 2, drop=0.1)
+        self.mlp = FFN(out_chan, out_chan * 2, drop=0.1)
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
     def forward(self, x):
@@ -305,7 +279,13 @@ class LA(nn.Module):
         return out
 
 
-class TDANetBlock(nn.Module):
+class UConvBlock(nn.Module):
+    """
+    This class defines the block which performs successive downsampling and
+    upsampling in order to be able to analyze the input features in multiple
+    resolutions.
+    """
+
     def __init__(self, out_channels=128, in_channels=512, upsampling_depth=4):
         super().__init__()
         self.proj_1x1 = ConvNormAct(out_channels, in_channels, 1, stride=1, groups=1)
@@ -335,7 +315,7 @@ class TDANetBlock(nn.Module):
 
         self.res_conv = nn.Conv1d(in_channels, out_channels, 1)
 
-        self.globalatt = GlobalAttention(
+        self.globalatt = GA(
             in_channels * upsampling_depth, in_channels, 0.1
         )
         self.last_layer = nn.ModuleList([])
@@ -368,7 +348,7 @@ class TDANetBlock(nn.Module):
         x_fused = []
         # Gather them now in reverse order
         for idx in range(self.depth):
-            tmp = F.interpolate(global_f, size=output[idx].shape[-1], mode="nearest") + output[idx]
+            tmp = torch.sigmoid(F.interpolate(global_f, size=output[idx].shape[-1], mode="nearest")) * output[idx]
             x_fused.append(tmp)
 
         expanded = None
@@ -377,16 +357,15 @@ class TDANetBlock(nn.Module):
                 expanded = self.last_layer[i](x_fused[i], x_fused[i + 1])
             else:
                 expanded = self.last_layer[i](x_fused[i], expanded)
-        # import pdb; pdb.set_trace()
+
         return self.res_conv(expanded) + residual
 
 
 class Recurrent(nn.Module):
     def __init__(self, out_channels=128, in_channels=512, upsampling_depth=4, _iter=4):
         super().__init__()
-        self.unet = TDANetBlock(out_channels, in_channels, upsampling_depth)
+        self.unet = UConvBlock(out_channels, in_channels, upsampling_depth)
         self.iter = _iter
-        # self.attention = Attention_block(out_channels)
         self.concat_block = nn.Sequential(
             nn.Conv1d(out_channels, out_channels, 1, 1, groups=out_channels), nn.PReLU()
         )
@@ -397,12 +376,11 @@ class Recurrent(nn.Module):
             if i == 0:
                 x = self.unet(x)
             else:
-                # m = self.attention(mixture, x)
                 x = self.unet(self.concat_block(mixture + x))
         return x
 
 
-class TDANetV2(nn.Module):
+class TDANetOld(BaseModel):
     def __init__(
         self,
         out_channels=128,
@@ -413,7 +391,7 @@ class TDANetV2(nn.Module):
         num_sources=2,
         sample_rate=16000,
     ):
-        super(TDANetV2, self).__init__()
+        super(TDANetOld, self).__init__(sample_rate=sample_rate)
 
         # Number of sources to produce
         self.in_channels = in_channels
@@ -522,3 +500,7 @@ class TDANetV2(nn.Module):
         if was_one_d:
             return estimated_waveforms.squeeze(0)
         return estimated_waveforms
+    
+    def get_model_args(self):
+        model_args = {"n_src": 2}
+        return model_args

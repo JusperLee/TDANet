@@ -13,6 +13,12 @@ This repository is the official implementation of [An efficient encoder-decoder 
 }
 ```
 
+## News
+
+:star2: July, 2023: We are pleased to announce the update of our model training framework! This new framework has excellent versatility, and it can flexibly handle the training and testing tasks of various voice separation models.
+
+
+
 ## Datasets
 
 The [LRS2 dataset](https://www.robots.ox.ac.uk/~vgg/data/lip_reading/lrs2.html) contains thousands of video clips acquired through BBC. LRS2 contains a large amount of noise and reverberation interference, which is more challenging and closer to the actual environment than the WSJ0 and LibriSpeech corpora. 
@@ -23,7 +29,18 @@ Dataset Download Link: [Google Driver](https://drive.google.com/file/d/1dCWD5OIG
 
 ## Training and evaluation
 
-- You can refer to this repository [Conv-TasNet](https://github.com/JusperLee/Conv-TasNet)
+### Training
+
+```shell
+python DataPreProcess/process_librimix.py --in_dir=xxxx --out_dir=DataPreProcess/Libri2Mix
+python audio_train.py --conf_dir=configs/tdanet.yml
+```
+
+### Evaluation
+
+```shell
+python audio_test.py --conf_dir=Experiments/checkpoint/TDANet/conf.yml
+```
 
 ## Results
 
@@ -39,3 +56,4 @@ Our model achieves the following performance on :
 
 - [A-FRCNN](https://github.com/JusperLee/AFRCNN-For-Speech-Separation)
 - [SudoRM-RF](https://github.com/etzinis/sudo_rm_rf)
+- [Asteroid](https://github.com/asteroid-team/asteroid)
