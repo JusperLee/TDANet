@@ -66,7 +66,7 @@ def main(config):
     # import pdb; pdb.set_trace()
     # conf["train_conf"]["masknet"].update({"n_src": 2})
     model =  getattr(look2hear.models, config["train_conf"]["audionet"]["audionet_name"]).from_pretrain(
-        model_path,
+        "JusperLee/TDANetBest-4ms-LRS2",
         sample_rate=config["train_conf"]["datamodule"]["data_config"]["sample_rate"],
         **config["train_conf"]["audionet"]["audionet_config"],
     )
@@ -74,6 +74,7 @@ def main(config):
         device = "cuda"
         model.to(device)
     model_device = next(model.parameters()).device
+    print(config["train_conf"]["datamodule"]["data_config"])
     datamodule: object = getattr(look2hear.datas, config["train_conf"]["datamodule"]["data_name"])(
         **config["train_conf"]["datamodule"]["data_config"]
     )

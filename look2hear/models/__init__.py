@@ -4,10 +4,14 @@
 # Email: lk21@mails.tsinghua.edu.cn
 # LastEditTime: 2022-10-04 16:24:53
 ###
+from .base_model import BaseModel
 from .TDANet import TDANet
+from .TDANet_best import TDANetBest
 
 __all__ = [
+    "BaseModel",
     "TDANet",
+    "TDANetBest"
 ]
 
 

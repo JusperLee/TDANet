@@ -2,6 +2,7 @@
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/an-efficient-encoder-decoder-architecture/speech-separation-on-libri2mix)](https://paperswithcode.com/sota/speech-separation-on-libri2mix?p=an-efficient-encoder-decoder-architecture) [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/an-efficient-encoder-decoder-architecture/speech-separation-on-wham)](https://paperswithcode.com/sota/speech-separation-on-wham?p=an-efficient-encoder-decoder-architecture)
 
+
 This repository is the official implementation of [An efficient encoder-decoder architecture with top-down attention for speech separation](https://cslikai.cn/project/TDANet) [Paper link](https://openreview.net/pdf?id=fzberKYWKsI). 
 
 ```
@@ -14,6 +15,8 @@ This repository is the official implementation of [An efficient encoder-decoder 
 ```
 
 ## News
+
+:fire: October, 2023: We have released the pre-trained models of our TDANet. You can download them from [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20TDANet2ms-Model-blue)](https://huggingface.co/JusperLee/TDANetBest-2ms-LRS2) and [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20TDANet4ms-Model-blue)](https://huggingface.co/JusperLee/TDANetBest-4ms-LRS2).
 
 :star2: July, 2023: We are pleased to announce the update of our model training framework! This new framework has excellent versatility, and it can flexibly handle the training and testing tasks of various voice separation models.
 
@@ -40,6 +43,20 @@ python audio_train.py --conf_dir=configs/tdanet.yml
 
 ```shell
 python audio_test.py --conf_dir=Experiments/checkpoint/TDANet/conf.yml
+```
+
+### Inference with Pretrained Model
+```python
+import os
+import torch
+import look2hear.models
+
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+
+model =  look2hear.models.BaseModel.from_pretrain("JusperLee/TDANetBest-2ms-LRS2").cuda()
+test_data = torch.randn(1, 1, 16000).cuda()
+out = model(test_data)
+print(out.shape)
 ```
 
 ## Results

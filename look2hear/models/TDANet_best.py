@@ -44,8 +44,24 @@ class _LayerNorm(nn.Module):
         return (self.gamma * normed_x.transpose(1, -1) + self.beta).transpose(1, -1)
 
 
-def GlobLN(nOut):
-    return nn.GroupNorm(1, nOut, eps=1e-8)
+class GlobLN(_LayerNorm):
+    """Global Layer Normalization (globLN)."""
+
+    def forward(self, x):
+        """ Applies forward pass.
+
+        Works for any input size > 2D.
+
+        Args:
+            x (:class:`torch.Tensor`): Shape `[batch, chan, *]`
+
+        Returns:
+            :class:`torch.Tensor`: gLN_x `[batch, chan, *]`
+        """
+        dims = list(range(1, len(x.shape)))
+        mean = x.mean(dim=dims, keepdim=True)
+        var = torch.pow(x - mean, 2).mean(dim=dims, keepdim=True)
+        return self.apply_gain_and_bias((x - mean) / (var + 1e-8).sqrt())
 
 
 class ConvNormAct(nn.Module):
@@ -196,10 +212,49 @@ class FFN(nn.Module):
         x = self.drop(x)
         return x
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, in_channels, max_length):
+        pe = torch.zeros(max_length, in_channels)
+        position = torch.arange(0, max_length).unsqueeze(1)
+        div_term = torch.exp(
+            (
+                torch.arange(0, in_channels, 2, dtype=torch.float)
+                * -(math.log(10000.0) / in_channels)
+            )
+        )
+        pe[:, 0::2] = torch.sin(position.float() * div_term)
+        pe[:, 1::2] = torch.cos(position.float() * div_term)
+        pe = pe.unsqueeze(0)
+        super().__init__()
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[:, : x.size(1)]
+        return x
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, in_channels, n_head, dropout, is_casual):
+        super().__init__()
+        self.pos_enc = PositionalEncoding(in_channels, 10000)
+        self.attn_in_norm = nn.LayerNorm(in_channels)
+        self.attn = nn.MultiheadAttention(in_channels, n_head, dropout)
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(in_channels)
+        self.is_casual = is_casual
+
+    def forward(self, x):
+        x = x.transpose(1, 2)
+        attns = None
+        output = self.pos_enc(self.attn_in_norm(x))
+        output, _ = self.attn(output, output, output)
+        output = self.norm(output + self.dropout(output))
+        return output.transpose(1, 2)
+
 class GA(nn.Module):
     def __init__(self, in_chan, out_chan, drop_path) -> None:
         super().__init__()
-        self.attn = ConvNorm(out_chan, out_chan, 3, bias=False)
+        self.attn = MultiHeadAttention(out_chan, 8, 0.1, False)
         self.mlp = FFN(out_chan, out_chan * 2, drop=0.1)
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
@@ -207,7 +262,6 @@ class GA(nn.Module):
         x = x + self.drop_path(self.attn(x))
         x = x + self.drop_path(self.mlp(x))
         return x
-
 
 class LA(nn.Module):
     def __init__(self, inp: int, oup: int, kernel: int = 1) -> None:
@@ -301,12 +355,14 @@ class UConvBlock(nn.Module):
             output.append(out_k)
 
         # global features
-        global_f = []
+        global_f = torch.zeros(
+            output[-1].shape, requires_grad=True, device=output1.device
+        )
         for fea in output:
-            global_f.append(F.adaptive_avg_pool1d(
+            global_f = global_f + F.adaptive_avg_pool1d(
                 fea, output_size=output[-1].shape[-1]
-            ))
-        global_f = self.globalatt(torch.stack(global_f, dim=1).sum(1))  # [B, N, T]
+            )
+        global_f = self.globalatt(global_f)  # [B, N, T]
 
         x_fused = []
         # Gather them now in reverse order
@@ -317,7 +373,7 @@ class UConvBlock(nn.Module):
         expanded = None
         for i in range(self.depth - 2, -1, -1):
             if i == self.depth - 2:
-                expanded = self.last_layer[i](x_fused[i], x_fused[i + 1])
+                expanded = self.last_layer[i](x_fused[i], x_fused[i - 1])
             else:
                 expanded = self.last_layer[i](x_fused[i], expanded)
 

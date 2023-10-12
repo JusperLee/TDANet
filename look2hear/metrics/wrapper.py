@@ -33,10 +33,10 @@ class MetricsTracker:
         self.writer = csv.DictWriter(self.results_csv, fieldnames=csv_columns)
         self.writer.writeheader()
         self.pit_sisnr = PITLossWrapper(
-            PairwiseNegSDR("sisdr", zero_mean=False), pit_from="pw_mtx"
+            PairwiseNegSDR("sisdr", zero_mean=True), pit_from="pw_mtx"
         )
         self.pit_snr = PITLossWrapper(
-            PairwiseNegSDR("snr", zero_mean=False), pit_from="pw_mtx"
+            PairwiseNegSDR("snr", zero_mean=True), pit_from="pw_mtx"
         )
 
     def __call__(self, mix, clean, estimate, key):
@@ -47,7 +47,7 @@ class MetricsTracker:
         sisnr_i = sisnr - sisnr_baseline
 
         # sdr
-        sdr = -fast_bss_eval.sdr_pit_loss(estimate, clean).mean()
+        sdr = -fast_bss_eval.sdr_pit_loss(clean, estimate).mean()
         sdr_baseline = -fast_bss_eval.sdr_pit_loss(mix, clean).mean()
         sdr_i = sdr - sdr_baseline
         # import pdb; pdb.set_trace()
