@@ -50,13 +50,19 @@ python audio_test.py --conf_dir=Experiments/checkpoint/TDANet/conf.yml
 import os
 import torch
 import look2hear.models
+import torchaudio
 
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
-model =  look2hear.models.BaseModel.from_pretrain("JusperLee/TDANetBest-2ms-LRS2").cuda()
-test_data = torch.randn(1, 1, 16000).cuda()
-out = model(test_data)
-print(out.shape)
+
+mix, sr = torchaudio.load("audio_mix.wav")
+transform = torchaudio.transforms.Resample(sr, 16_000)
+mix = transform(mix)
+mix = mix.view(1, 1, -1)
+model = look2hear.models.BaseModel.from_pretrain("JusperLee/TDANetBest-2ms-LRS2").cuda()
+est_sources = model(mix.cuda())
+torchaudio.save("audio1sep.wav", est_sources[:, 0, :].detach().cpu(), 16_000)
+torchaudio.save("audio2sep.wav", est_sources[:, 1, :].detach().cpu(), 16_000)
 ```
 
 ## Results
